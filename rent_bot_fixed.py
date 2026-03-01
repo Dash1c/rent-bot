@@ -15,7 +15,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 # ================== НАСТРОЙКИ ==================
 logging.basicConfig(level=logging.INFO)
 import os  # добавь эту строчку, если её нет вверху файла
-bot = Bot(token=os.getenv("8379999805:AAEZKuyfHrpCFvHvUvDOBzIXqBFDNbeFxV8"))
+bot = Bot(token="8379999805:AAEZKuyfHrpCFvHvUvDOBzIXqBFDNbeFxV8")
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 

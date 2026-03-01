@@ -6,6 +6,6 @@ meta:
 build:
   requirementsPath: requirements.txt
 run:
-  scriptName: rent_bot_fixed.py
+  scriptName: amvera_bot/rent_bot_fixed.py
   persistenceMount: /data
   containerPort: 80

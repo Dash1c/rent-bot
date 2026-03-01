@@ -1,0 +1,11 @@
+meta:
+  environment: python
+  toolchain:
+    name: pip
+    version: "3.11"
+build:
+  requirementsPath: requirements.txt
+run:
+  scriptName: rent_bot_fixed.py
+  persistenceMount: /data
+  containerPort: 80

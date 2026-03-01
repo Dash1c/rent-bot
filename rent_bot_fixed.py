@@ -196,7 +196,7 @@ async def new_rent_start(message: types.Message, state: FSMContext):
     """Начать новую аренду"""
     await state.set_state(RentStates.waiting_for_track_number)
     await message.answer(
-        f"🔢 Введи трек-номер рамы (можно с буквами и цифрами):",
+        f"🔢 Введи данные (можно с буквами и цифрами):",
         reply_markup=get_back_keyboard()
     )
 

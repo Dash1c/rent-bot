@@ -11,16 +11,14 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-
 # ================== НАСТРОЙКИ ==================
 logging.basicConfig(level=logging.INFO)
-import os  # добавь эту строчку, если её нет вверху файла
-bot = Bot(token="8379999805:AAEZKuyfHrpCFvHvUvDOBzIXqBFDNbeFxV8")
+bot = Bot(token="8379999805:AAEZKuyfHrpCFvHvUvDOBzIXqBFDNbeFxV8")  # ⚠️ ВСТАВЬ СВОЙ ТОКЕН!
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
 # Файл для хранения данных
-DATA_FILE = "/data/rent_data.json"
+DATA_FILE = "rent_data.json"
 
 # 📢 ТЕСТОВЫЙ РЕЖИМ: True = минуты, False = дни
 TEST_MODE = False  # Сейчас минуты! Для работы поменяй на False
@@ -198,7 +196,7 @@ async def new_rent_start(message: types.Message, state: FSMContext):
     """Начать новую аренду"""
     await state.set_state(RentStates.waiting_for_track_number)
     await message.answer(
-        f"🔢 Введи данные (можно с буквами и цифрами):",
+        f"🔢 Введи трек-номер рамы (можно с буквами и цифрами):",
         reply_markup=get_back_keyboard()
     )
 

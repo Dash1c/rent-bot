@@ -13,7 +13,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 # ================== НАСТРОЙКИ ==================
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token="8379999805:AAEZKuyfHrpCFvHvUvDOBzIXqBFDNbeFxV8")  # ⚠️ ВСТАВЬ СВОЙ ТОКЕН!
+bot = Bot(token="8379999805:AAEZKuyfHrpCFvHvUvDOBzIXqBFDNbeFxV8")
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
@@ -21,10 +21,14 @@ dp = Dispatcher(storage=storage)
 DATA_FILE = "rent_data.json"
 
 # 📢 ТЕСТОВЫЙ РЕЖИМ: True = минуты, False = дни
-TEST_MODE = False  # Сейчас минуты! Для работы поменяй на False
+TEST_MODE = False
 
 # ================== НАСТРОЙКИ ДОСТУПА ==================
-ALLOWED_USERS = [651953211, 1901955703, 1793833215]  # Сюда вставь ID двух человек
+ALLOWED_USERS = [651953211, 1901955703, 1793833215]
+
+# ================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ==================
+active_rents_list = []  # Для хранения списка активных аренд
+extend_rents_list = []  # Для продления
 
 # Фильтр для проверки доступа
 from aiogram.filters import BaseFilter
@@ -47,8 +51,8 @@ def load_data():
         with open(DATA_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     return {
-        "rents": {},  # {track_number: {"end_date": "2024-01-20 15:30", "user_id": 123}}
-        "blacklist": []  # [track_number, ...]
+        "rents": {},
+        "blacklist": []
     }
 
 def save_data(data):
@@ -69,10 +73,10 @@ def get_main_keyboard():
     return keyboard
 
 def get_rent_keyboard():
-    """Меню аренды"""
+    """Меню аренды (с новой кнопкой Активные аренды)"""
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📋 Активные аренды")],  # ← НОВАЯ КНОПКА!
+            [KeyboardButton(text="📋 Активные аренды")],  # Новая кнопка!
             [KeyboardButton(text="➕ Новая аренда")],
             [KeyboardButton(text="⏳ Продлить аренду")],
             [KeyboardButton(text="⏹ Остановить аренду")],
@@ -197,21 +201,19 @@ async def new_rent_start(message: types.Message, state: FSMContext):
     """Начать новую аренду"""
     await state.set_state(RentStates.waiting_for_track_number)
     await message.answer(
-        f"🔢 Введи данные (можно с буквами и цифрами):",
+        "🔢 Введи данные (можно с буквами и цифрами):",
         reply_markup=get_back_keyboard()
     )
 
 @dp.message(AllowedUsersFilter(), RentStates.waiting_for_track_number)
 async def process_track_number(message: types.Message, state: FSMContext):
-    """Получаем трек-номер (теперь можно с буквами!)"""
+    """Получаем трек-номер"""
     track_number = message.text.strip()
     
-    # Проверяем только что номер не пустой
     if not track_number:
         await message.answer("❌ Номер не может быть пустым. Введи трек-номер:")
         return
     
-    # Проверяем не в черном ли списке
     data = load_data()
     if track_number in data["blacklist"]:
         await message.answer(
@@ -221,12 +223,11 @@ async def process_track_number(message: types.Message, state: FSMContext):
         await state.clear()
         return
     
-    # Сохраняем номер
     await state.update_data(track_number=track_number)
     await state.set_state(RentStates.waiting_for_rent_days)
     
     await message.answer(
-        f"⏳ На сколько аренда? (напиши число)",
+        "⏳ На сколько аренда? (напиши число)",
         reply_markup=get_back_keyboard()
     )
 
@@ -238,26 +239,21 @@ async def process_rent_days(message: types.Message, state: FSMContext):
         if days < 1:
             raise ValueError
     except ValueError:
-        await message.answer(f"❌ Пожалуйста, введи число больше 0")
+        await message.answer("❌ Пожалуйста, введи число больше 0")
         return
     
-    # Получаем сохраненный номер
     data_state = await state.get_data()
     track_number = data_state["track_number"]
     
-    # Рассчитываем дату окончания
     if TEST_MODE:
-        # Режим теста - МИНУТЫ
         end_date = datetime.now() + timedelta(minutes=days)
         date_str = end_date.strftime("%Y-%m-%d %H:%M")
         unit_word = "минут"
     else:
-        # Рабочий режим - ДНИ
         end_date = datetime.now() + timedelta(days=days)
         date_str = end_date.strftime("%Y-%m-%d")
         unit_word = "дней"
     
-    # Сохраняем в базу
     data = load_data()
     data["rents"][track_number] = {
         "end_date": date_str,
@@ -275,6 +271,139 @@ async def process_rent_days(message: types.Message, state: FSMContext):
         reply_markup=get_main_keyboard()
     )
     await state.clear()
+
+# ================== АКТИВНЫЕ АРЕНДЫ (НОВЫЕ ФУНКЦИИ) ==================
+@dp.message(AllowedUsersFilter(), lambda message: message.text == "📋 Активные аренды")
+async def show_active_rents(message: types.Message):
+    """Показать список активных аренд"""
+    if message.from_user.id not in ALLOWED_USERS:
+        return
+    
+    data = load_data()
+    active_rents = list(data["rents"].keys())
+    
+    if not active_rents:
+        await message.answer("📭 Нет активных аренд", reply_markup=get_rent_keyboard())
+        return
+    
+    builder = InlineKeyboardBuilder()
+    for i, number in enumerate(active_rents):
+        builder.button(text=number, callback_data=f"view_{i}")
+    builder.button(text="🔙 Назад", callback_data="back_to_rent")
+    builder.adjust(1)
+    
+    global active_rents_list
+    active_rents_list = active_rents
+    
+    await message.answer(
+        "📋 Список активных аренд. Нажми на номер для действий:",
+        reply_markup=builder.as_markup()
+    )
+
+@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("view_"))
+async def view_rent_details(callback: types.CallbackQuery, state: FSMContext):
+    """Показать детали аренды и действия"""
+    if callback.from_user.id not in ALLOWED_USERS:
+        await callback.answer()
+        return
+    
+    index = int(callback.data.split("_")[1])
+    
+    global active_rents_list
+    if index >= len(active_rents_list):
+        await callback.message.answer("❌ Ошибка: номер не найден")
+        await callback.answer()
+        return
+    
+    track_number = active_rents_list[index]
+    
+    data = load_data()
+    rent_info = data["rents"].get(track_number, {})
+    end_date = rent_info.get("end_date", "неизвестно")
+    
+    if " " in end_date:
+        end_date_formatted = datetime.strptime(end_date, "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+    else:
+        end_date_formatted = datetime.strptime(end_date, "%Y-%m-%d").strftime("%d.%m.%Y")
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⏳ Продлить", callback_data=f"extend_{index}")
+    builder.button(text="⏹ Остановить", callback_data=f"stop_{index}")
+    builder.button(text="⛔ В ЧС", callback_data=f"to_blacklist_from_view_{index}")
+    builder.button(text="🔙 Назад к списку", callback_data="back_to_active")
+    builder.adjust(2)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"📌 Номер: {track_number}\n"
+        f"⏱ Заканчивается: {end_date_formatted}\n\n"
+        f"Выбери действие:",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
+
+@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("to_blacklist_from_view_"))
+async def add_to_blacklist_from_view(callback: types.CallbackQuery):
+    """Добавить номер в черный список из просмотра аренды"""
+    if callback.from_user.id not in ALLOWED_USERS:
+        await callback.answer()
+        return
+    
+    index = int(callback.data.replace("to_blacklist_from_view_", ""))
+    
+    global active_rents_list
+    if index >= len(active_rents_list):
+        await callback.message.answer("❌ Ошибка: номер не найден")
+        await callback.answer()
+        return
+    
+    track_number = active_rents_list[index]
+    
+    data = load_data()
+    if track_number in data["rents"]:
+        del data["rents"][track_number]
+    if track_number not in data["blacklist"]:
+        data["blacklist"].append(track_number)
+        save_data(data)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"⛔ Номер {track_number} добавлен в черный список",
+        reply_markup=get_rent_keyboard()
+    )
+    await callback.answer()
+
+@dp.callback_query(AllowedUsersFilter(), lambda c: c.data == "back_to_active")
+async def back_to_active_list(callback: types.CallbackQuery):
+    """Вернуться к списку активных аренд"""
+    if callback.from_user.id not in ALLOWED_USERS:
+        await callback.answer()
+        return
+    
+    data = load_data()
+    active_rents = list(data["rents"].keys())
+    
+    if not active_rents:
+        await callback.message.delete()
+        await callback.message.answer("📭 Нет активных аренд", reply_markup=get_rent_keyboard())
+        await callback.answer()
+        return
+    
+    builder = InlineKeyboardBuilder()
+    for i, number in enumerate(active_rents):
+        builder.button(text=number, callback_data=f"view_{i}")
+    builder.button(text="🔙 Назад", callback_data="back_to_rent")
+    builder.adjust(1)
+    
+    global active_rents_list
+    active_rents_list = active_rents
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        "📋 Список активных аренд:",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
 
 # ================== ПРОДЛИТЬ АРЕНДУ ==================
 @dp.message(AllowedUsersFilter(), lambda message: message.text == "⏳ Продлить аренду")
@@ -316,24 +445,21 @@ async def process_extend_days(message: types.Message, state: FSMContext):
         if days < 1:
             raise ValueError
     except ValueError:
-        await message.answer(f"❌ Пожалуйста, введи число больше 0")
+        await message.answer("❌ Пожалуйста, введи число больше 0")
         return
     
     data_state = await state.get_data()
     track_number = data_state["track_number"]
     
-    # Обновляем дату окончания
     data = load_data()
     
     if TEST_MODE:
-        # Для минут
         current_end = datetime.strptime(data["rents"][track_number]["end_date"], "%Y-%m-%d %H:%M")
         new_end = current_end + timedelta(minutes=days)
         data["rents"][track_number]["end_date"] = new_end.strftime("%Y-%m-%d %H:%M")
         time_display = new_end.strftime("%d.%m.%Y %H:%M")
         unit_word = "минут"
     else:
-        # Для дней
         current_end = datetime.strptime(data["rents"][track_number]["end_date"], "%Y-%m-%d")
         new_end = current_end + timedelta(days=days)
         data["rents"][track_number]["end_date"] = new_end.strftime("%Y-%m-%d")
@@ -452,10 +578,8 @@ async def add_to_blacklist(callback: types.CallbackQuery):
     track_number = callback.data.replace("to_blacklist_", "")
     
     data = load_data()
-    # Удаляем из аренд если был
     if track_number in data["rents"]:
         del data["rents"][track_number]
-    # Добавляем в ЧС
     if track_number not in data["blacklist"]:
         data["blacklist"].append(track_number)
         save_data(data)
@@ -466,144 +590,6 @@ async def add_to_blacklist(callback: types.CallbackQuery):
         reply_markup=get_main_keyboard()
     )
     await callback.answer()
-
-@dp.message(AllowedUsersFilter(), lambda message: message.text == "📋 Активные аренды")
-async def show_active_rents(message: types.Message):
-    """Показать список активных аренд"""
-    if not is_allowed(message.from_user.id):
-        return
-    
-    data = load_data()
-    active_rents = list(data["rents"].keys())
-    
-    if not active_rents:
-        await message.answer("📭 Нет активных аренд", reply_markup=get_rent_keyboard())
-        return
-    
-    builder = InlineKeyboardBuilder()
-    for i, number in enumerate(active_rents):
-        builder.button(text=number, callback_data=f"view_{i}")
-    builder.button(text="🔙 Назад", callback_data="back_to_rent")
-    builder.adjust(1)
-    
-    global active_rents_list
-    active_rents_list = active_rents
-    
-    await message.answer(
-        "📋 Список активных аренд. Нажми на номер для действий:",
-        reply_markup=builder.as_markup()
-    )
-
-    @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("view_"))
-async def view_rent_details(callback: types.CallbackQuery, state: FSMContext):
-    """Показать детали аренды и действия"""
-    if callback.from_user.id not in ALLOWED_USERS:
-        await callback.answer()
-        return
-    
-    index = int(callback.data.split("_")[1])
-    
-    global active_rents_list
-    if index >= len(active_rents_list):
-        await callback.message.answer("❌ Ошибка: номер не найден")
-        await callback.answer()
-        return
-    
-    track_number = active_rents_list[index]
-    
-    # Получаем информацию об аренде
-    data = load_data()
-    rent_info = data["rents"].get(track_number, {})
-    end_date = rent_info.get("end_date", "неизвестно")
-    
-    # Форматируем дату для вывода
-    if " " in end_date:
-        end_date_formatted = datetime.strptime(end_date, "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
-    else:
-        end_date_formatted = datetime.strptime(end_date, "%Y-%m-%d").strftime("%d.%m.%Y")
-    
-    # Создаем клавиатуру с действиями
-    builder = InlineKeyboardBuilder()
-    builder.button(text="⏳ Продлить", callback_data=f"extend_{index}")
-    builder.button(text="⏹ Остановить", callback_data=f"stop_{index}")
-    builder.button(text="⛔ В ЧС", callback_data=f"to_blacklist_from_view_{index}")
-    builder.button(text="🔙 Назад к списку", callback_data="back_to_active")
-    builder.adjust(2)
-    
-    await callback.message.delete()
-    await callback.message.answer(
-        f"📌 Номер: {track_number}\n"
-        f"⏱ Заканчивается: {end_date_formatted}\n\n"
-        f"Выбери действие:",
-        reply_markup=builder.as_markup()
-    )
-    await callback.answer()
-
-    @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("to_blacklist_from_view_"))
-async def add_to_blacklist_from_view(callback: types.CallbackQuery):
-    """Добавить номер в черный список из просмотра аренды"""
-    if callback.from_user.id not in ALLOWED_USERS:
-        await callback.answer()
-        return
-    
-    index = int(callback.data.replace("to_blacklist_from_view_", ""))
-    
-    global active_rents_list
-    if index >= len(active_rents_list):
-        await callback.message.answer("❌ Ошибка: номер не найден")
-        await callback.answer()
-        return
-    
-    track_number = active_rents_list[index]
-    
-    data = load_data()
-    # Удаляем из аренд
-    if track_number in data["rents"]:
-        del data["rents"][track_number]
-    # Добавляем в ЧС
-    if track_number not in data["blacklist"]:
-        data["blacklist"].append(track_number)
-        save_data(data)
-    
-    await callback.message.delete()
-    await callback.message.answer(
-        f"⛔ Номер {track_number} добавлен в черный список",
-        reply_markup=get_rent_keyboard()
-    )
-    await callback.answer()
-
-    @dp.callback_query(AllowedUsersFilter(), lambda c: c.data == "back_to_active")
-async def back_to_active_list(callback: types.CallbackQuery):
-    """Вернуться к списку активных аренд"""
-    if callback.from_user.id not in ALLOWED_USERS:
-        await callback.answer()
-        return
-    
-    data = load_data()
-    active_rents = list(data["rents"].keys())
-    
-    if not active_rents:
-        await callback.message.delete()
-        await callback.message.answer("📭 Нет активных аренд", reply_markup=get_rent_keyboard())
-        await callback.answer()
-        return
-    
-    builder = InlineKeyboardBuilder()
-    for i, number in enumerate(active_rents):
-        builder.button(text=number, callback_data=f"view_{i}")
-    builder.button(text="🔙 Назад", callback_data="back_to_rent")
-    builder.adjust(1)
-    
-    global active_rents_list
-    active_rents_list = active_rents
-    
-    await callback.message.delete()
-    await callback.message.answer(
-        "📋 Список активных аренд:",
-        reply_markup=builder.as_markup()
-    )
-    await callback.answer()
-
 
 # ================== ПРОДЛЕНИЕ ИЗ УВЕДОМЛЕНИЯ ==================
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_from_notify_"))
@@ -661,38 +647,31 @@ async def back_to_blacklist(callback: types.CallbackQuery):
 
 # ================== УВЕДОМЛЕНИЯ ==================
 async def check_expired_rents():
-    """Проверяет аренды и отправляет уведомления в 20:00 МСК для тех, у кого срок заканчивается сегодня"""
+    """Проверяет аренды и отправляет уведомления в 20:00 МСК"""
     while True:
         try:
-            # Текущее время по МСК (UTC+3)
             now_msk = datetime.utcnow() + timedelta(hours=3)
             
-            # Проверяем только в 20:00 (плюс-минус минута)
             if now_msk.hour == 20 and 0 <= now_msk.minute <= 1:
-                print(f"⏰ {now_msk.strftime('%d.%m.%Y %H:%M')} - Проверяю аренды, заканчивающиеся сегодня")
+                print(f"⏰ {now_msk.strftime('%d.%m.%Y %H:%M')} - Проверяю аренды")
                 
                 data = load_data()
-                today = now_msk.date()  # Сегодняшняя дата
+                today = now_msk.date()
                 
                 for track_number, rent_info in list(data["rents"].items()):
                     try:
                         date_str = rent_info["end_date"].strip()
                         user_id = rent_info["user_id"]
                         
-                        # Проверяем, разрешен ли пользователь
                         if user_id not in ALLOWED_USERS:
                             continue
                         
-                        # Получаем дату окончания аренды
                         if " " in date_str:
-                            # Формат с временем (тестовый режим)
                             end_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
                             end_date_only = end_date.date()
                         else:
-                            # Формат без времени (рабочий режим)
                             end_date_only = datetime.strptime(date_str, "%Y-%m-%d").date()
                         
-                        # ВАЖНО: Отправляем уведомление ТОЛЬКО если аренда заканчивается СЕГОДНЯ
                         if end_date_only == today:
                             try:
                                 await bot.send_message(
@@ -703,9 +682,8 @@ async def check_expired_rents():
                                     f"Что делаем?",
                                     reply_markup=get_expired_notification_keyboard(track_number)
                                 )
-                                print(f"✅ Уведомление отправлено для {track_number} (заканчивается сегодня)")
+                                print(f"✅ Уведомление отправлено для {track_number}")
                                 
-                                # Удаляем запись после уведомления, чтобы не отправлять завтра
                                 del data["rents"][track_number]
                                 save_data(data)
                                 
@@ -716,10 +694,8 @@ async def check_expired_rents():
                         print(f"❌ Ошибка обработки {track_number}: {e}")
                         continue
                 
-                # Ждем минуту, чтобы не отправить повторно
                 await asyncio.sleep(60)
             
-            # Проверяем каждую минуту
             await asyncio.sleep(60)
             
         except Exception as e:
@@ -728,7 +704,6 @@ async def check_expired_rents():
 
 # ================== ЗАПУСК ==================
 async def main():
-    # Запускаем фоновую задачу для проверки уведомлений
     asyncio.create_task(check_expired_rents())
     
     mode = "ТЕСТОВЫЙ (минуты)" if TEST_MODE else "РАБОЧИЙ (дни)"

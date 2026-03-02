@@ -72,6 +72,7 @@ def get_rent_keyboard():
     """Меню аренды"""
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
+            [KeyboardButton(text="📋 Активные аренды")],  # ← НОВАЯ КНОПКА!
             [KeyboardButton(text="➕ Новая аренда")],
             [KeyboardButton(text="⏳ Продлить аренду")],
             [KeyboardButton(text="⏹ Остановить аренду")],
@@ -363,7 +364,8 @@ async def stop_rent_start(message: types.Message):
     
     builder = InlineKeyboardBuilder()
     for number in active_rents:
-        builder.button(text=number, callback_data=f"stop_{number}")
+        short_number = number[:30]
+        builder.button(text=number, callback_data=f"stop_{short_number}")
     builder.button(text="🔙 Назад", callback_data="back_to_rent")
     builder.adjust(1)
     
@@ -464,6 +466,144 @@ async def add_to_blacklist(callback: types.CallbackQuery):
         reply_markup=get_main_keyboard()
     )
     await callback.answer()
+
+@dp.message(AllowedUsersFilter(), lambda message: message.text == "📋 Активные аренды")
+async def show_active_rents(message: types.Message):
+    """Показать список активных аренд"""
+    if not is_allowed(message.from_user.id):
+        return
+    
+    data = load_data()
+    active_rents = list(data["rents"].keys())
+    
+    if not active_rents:
+        await message.answer("📭 Нет активных аренд", reply_markup=get_rent_keyboard())
+        return
+    
+    builder = InlineKeyboardBuilder()
+    for i, number in enumerate(active_rents):
+        builder.button(text=number, callback_data=f"view_{i}")
+    builder.button(text="🔙 Назад", callback_data="back_to_rent")
+    builder.adjust(1)
+    
+    global active_rents_list
+    active_rents_list = active_rents
+    
+    await message.answer(
+        "📋 Список активных аренд. Нажми на номер для действий:",
+        reply_markup=builder.as_markup()
+    )
+
+    @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("view_"))
+async def view_rent_details(callback: types.CallbackQuery, state: FSMContext):
+    """Показать детали аренды и действия"""
+    if callback.from_user.id not in ALLOWED_USERS:
+        await callback.answer()
+        return
+    
+    index = int(callback.data.split("_")[1])
+    
+    global active_rents_list
+    if index >= len(active_rents_list):
+        await callback.message.answer("❌ Ошибка: номер не найден")
+        await callback.answer()
+        return
+    
+    track_number = active_rents_list[index]
+    
+    # Получаем информацию об аренде
+    data = load_data()
+    rent_info = data["rents"].get(track_number, {})
+    end_date = rent_info.get("end_date", "неизвестно")
+    
+    # Форматируем дату для вывода
+    if " " in end_date:
+        end_date_formatted = datetime.strptime(end_date, "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+    else:
+        end_date_formatted = datetime.strptime(end_date, "%Y-%m-%d").strftime("%d.%m.%Y")
+    
+    # Создаем клавиатуру с действиями
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⏳ Продлить", callback_data=f"extend_{index}")
+    builder.button(text="⏹ Остановить", callback_data=f"stop_{index}")
+    builder.button(text="⛔ В ЧС", callback_data=f"to_blacklist_from_view_{index}")
+    builder.button(text="🔙 Назад к списку", callback_data="back_to_active")
+    builder.adjust(2)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"📌 Номер: {track_number}\n"
+        f"⏱ Заканчивается: {end_date_formatted}\n\n"
+        f"Выбери действие:",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
+
+    @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("to_blacklist_from_view_"))
+async def add_to_blacklist_from_view(callback: types.CallbackQuery):
+    """Добавить номер в черный список из просмотра аренды"""
+    if callback.from_user.id not in ALLOWED_USERS:
+        await callback.answer()
+        return
+    
+    index = int(callback.data.replace("to_blacklist_from_view_", ""))
+    
+    global active_rents_list
+    if index >= len(active_rents_list):
+        await callback.message.answer("❌ Ошибка: номер не найден")
+        await callback.answer()
+        return
+    
+    track_number = active_rents_list[index]
+    
+    data = load_data()
+    # Удаляем из аренд
+    if track_number in data["rents"]:
+        del data["rents"][track_number]
+    # Добавляем в ЧС
+    if track_number not in data["blacklist"]:
+        data["blacklist"].append(track_number)
+        save_data(data)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"⛔ Номер {track_number} добавлен в черный список",
+        reply_markup=get_rent_keyboard()
+    )
+    await callback.answer()
+
+    @dp.callback_query(AllowedUsersFilter(), lambda c: c.data == "back_to_active")
+async def back_to_active_list(callback: types.CallbackQuery):
+    """Вернуться к списку активных аренд"""
+    if callback.from_user.id not in ALLOWED_USERS:
+        await callback.answer()
+        return
+    
+    data = load_data()
+    active_rents = list(data["rents"].keys())
+    
+    if not active_rents:
+        await callback.message.delete()
+        await callback.message.answer("📭 Нет активных аренд", reply_markup=get_rent_keyboard())
+        await callback.answer()
+        return
+    
+    builder = InlineKeyboardBuilder()
+    for i, number in enumerate(active_rents):
+        builder.button(text=number, callback_data=f"view_{i}")
+    builder.button(text="🔙 Назад", callback_data="back_to_rent")
+    builder.adjust(1)
+    
+    global active_rents_list
+    active_rents_list = active_rents
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        "📋 Список активных аренд:",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
+
 
 # ================== ПРОДЛЕНИЕ ИЗ УВЕДОМЛЕНИЯ ==================
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_from_notify_"))

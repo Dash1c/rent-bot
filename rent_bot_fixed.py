@@ -526,11 +526,13 @@ async def stop_rent_start(message: types.Message):
         return
     
     builder = InlineKeyboardBuilder()
-    for number in active_rents:
-        short_number = number[:30]
-        builder.button(text=number, callback_data=f"stop_{short_number}")
+    for i, number in enumerate(active_rents):
+        builder.button(text=number, callback_data=f"stop_{i}")  # Передаём индекс, а не обрезанный номер!
     builder.button(text="🔙 Назад", callback_data="back_to_rent")
     builder.adjust(1)
+    
+    global active_rents_list
+    active_rents_list = active_rents  # Сохраняем список для получения номера по индексу
     
     await message.answer(
         "📋 Выбери номер для остановки:",
@@ -540,7 +542,18 @@ async def stop_rent_start(message: types.Message):
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("stop_"))
 async def stop_rent_confirm(callback: types.CallbackQuery, state: FSMContext):
     """Подтверждение остановки аренды"""
-    track_number = callback.data.split("_")[1]
+    # Получаем индекс из callback_data
+    index = int(callback.data.split("_")[1])
+    
+    # Получаем номер по индексу из глобального списка
+    global active_rents_list
+    if index >= len(active_rents_list):
+        await callback.message.answer("❌ Ошибка: номер не найден")
+        await callback.answer()
+        return
+    
+    track_number = active_rents_list[index]  # Сохраняем реальный номер, а не индекс!
+    
     await state.update_data(track_number=track_number)
     await state.set_state(RentStates.waiting_for_remove_confirm)
     

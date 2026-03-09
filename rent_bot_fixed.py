@@ -257,7 +257,8 @@ async def process_rent_days(message: types.Message, state: FSMContext):
     data = load_data()
     data["rents"][track_number] = {
         "end_date": date_str,
-        "user_id": message.from_user.id
+        "user_id": message.from_user.id,
+        "username": message.from_user.username or message.from_user.first_name  # ← вот это добавить!
     }
     save_data(data)
     
@@ -451,20 +452,26 @@ async def process_extend_days(message: types.Message, state: FSMContext):
     data_state = await state.get_data()
     track_number = data_state["track_number"]
     
+    # Обновляем дату окончания
     data = load_data()
     
     if TEST_MODE:
+        # Для минут
         current_end = datetime.strptime(data["rents"][track_number]["end_date"], "%Y-%m-%d %H:%M")
         new_end = current_end + timedelta(minutes=days)
         data["rents"][track_number]["end_date"] = new_end.strftime("%Y-%m-%d %H:%M")
         time_display = new_end.strftime("%d.%m.%Y %H:%M")
         unit_word = "минут"
     else:
+        # Для дней
         current_end = datetime.strptime(data["rents"][track_number]["end_date"], "%Y-%m-%d")
         new_end = current_end + timedelta(days=days)
         data["rents"][track_number]["end_date"] = new_end.strftime("%Y-%m-%d")
         time_display = new_end.strftime("%d.%m.%Y")
         unit_word = "дней"
+    
+    # 👇 ВОТ СЮДА добавь эти строки:
+    data["rents"][track_number]["username"] = message.from_user.username or message.from_user.first_name
     
     save_data(data)
     
@@ -647,55 +654,64 @@ async def back_to_blacklist(callback: types.CallbackQuery):
 
 # ================== УВЕДОМЛЕНИЯ ==================
 async def check_expired_rents():
-    """Проверяет аренды и отправляет уведомления в 20:00 МСК"""
+    """Проверяет аренды и отправляет уведомления ВСЕМ пользователям в 20:00 МСК"""
     while True:
         try:
             now_msk = datetime.utcnow() + timedelta(hours=3)
             
             if now_msk.hour == 20 and 0 <= now_msk.minute <= 1:
-                print(f"⏰ {now_msk.strftime('%d.%m.%Y %H:%M')} - Проверяю аренды")
+                print(f"⏰ {now_msk.strftime('%d.%m.%Y %H:%M')} - Проверяю аренды, заканчивающиеся сегодня")
                 
                 data = load_data()
                 today = now_msk.date()
                 
+                # Проходим по всем активным арендам
                 for track_number, rent_info in list(data["rents"].items()):
                     try:
                         date_str = rent_info["end_date"].strip()
-                        user_id = rent_info["user_id"]
                         
-                        if user_id not in ALLOWED_USERS:
-                            continue
-                        
+                        # Получаем дату окончания аренды
                         if " " in date_str:
                             end_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
                             end_date_only = end_date.date()
                         else:
                             end_date_only = datetime.strptime(date_str, "%Y-%m-%d").date()
                         
+                        # Если аренда заканчивается сегодня
                         if end_date_only == today:
-                            try:
-                                await bot.send_message(
-                                    user_id,
-                                    f"⚠️ НАПОМИНАНИЕ В 20:00!\n"
-                                    f"📌 Номер: {track_number}\n"
-                                    f"⏱ СРОК АРЕНДЫ ИСТЕКАЕТ СЕГОДНЯ!\n\n"
-                                    f"Что делаем?",
-                                    reply_markup=get_expired_notification_keyboard(track_number)
-                                )
-                                print(f"✅ Уведомление отправлено для {track_number}")
-                                
-                                del data["rents"][track_number]
-                                save_data(data)
-                                
-                            except Exception as e:
-                                print(f"❌ Ошибка отправки для {track_number}: {e}")
+                            print(f"📢 Аренда {track_number} заканчивается сегодня, отправляю уведомления ВСЕМ")
+                            
+                            # Отправляем уведомление КАЖДОМУ разрешенному пользователю
+                            sent_count = 0
+                            for user_id in ALLOWED_USERS:
+                                try:
+                                    await bot.send_message(
+                                        user_id,
+                                        f"⚠️ НАПОМИНАНИЕ В 20:00!\n"
+                                        f"📌 Номер: {track_number}\n"
+                                        f"⏱ СРОК АРЕНДЫ ИСТЕКАЕТ СЕГОДНЯ!\n\n"
+                                        f"Этот номер был добавлен пользователем @{rent_info.get('username', 'неизвестно')}\n\n"
+                                        f"Что делаем?",
+                                        reply_markup=get_expired_notification_keyboard(track_number)
+                                    )
+                                    sent_count += 1
+                                except Exception as e:
+                                    print(f"❌ Не удалось отправить пользователю {user_id}: {e}")
+                            
+                            print(f"✅ Уведомление о {track_number} отправлено {sent_count} пользователям")
+                            
+                            # Удаляем запись после уведомления, чтобы не отправлять завтра
+                            del data["rents"][track_number]
+                            save_data(data)
                     
                     except Exception as e:
                         print(f"❌ Ошибка обработки {track_number}: {e}")
                         continue
                 
+                # Ждем минуту, чтобы не отправить повторно
                 await asyncio.sleep(60)
             
+            # Проверяем каждую минуту
             await asyncio.sleep(60)
             
         except Exception as e:

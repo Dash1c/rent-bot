@@ -18,7 +18,7 @@ storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
 # Файл для хранения данных
-DATA_FILE = "rent_data.json"
+DATA_FILE = "/data/rent_data.json" 
 
 # 📢 ТЕСТОВЫЙ РЕЖИМ: True = минуты, False = дни
 TEST_MODE = False

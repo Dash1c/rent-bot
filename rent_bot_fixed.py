@@ -46,14 +46,28 @@ class RentStates(StatesGroup):
 
 # ================== РАБОТА С ДАННЫМИ ==================
 def load_data():
-    """Загружает данные из JSON файла"""
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {
-        "rents": {},
-        "blacklist": []
-    }
+    """Загружает данные из JSON файла с защитой от ошибок"""
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if content:  # если файл не пустой
+                    return json.loads(content)
+                else:
+                    print("⚠️ Файл данных пуст, создаю новый")
+                    return {"rents": {}, "blacklist": []}
+        else:
+            print("📁 Файл данных не найден, создаю новый")
+            return {"rents": {}, "blacklist": []}
+    except json.JSONDecodeError as e:
+        print(f"❌ Ошибка чтения JSON: {e}. Создаю новый файл")
+        # Создаем бэкап битого файла
+        if os.path.exists(DATA_FILE):
+            os.rename(DATA_FILE, DATA_FILE + ".bak")
+        return {"rents": {}, "blacklist": []}
+    except Exception as e:
+        print(f"❌ Неожиданная ошибка: {e}")
+        return {"rents": {}, "blacklist": []}
 
 def save_data(data):
     """Сохраняет данные в JSON файл"""

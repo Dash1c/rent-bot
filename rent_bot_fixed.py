@@ -439,7 +439,17 @@ async def extend_rent_start(message: types.Message):
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_"))
 async def extend_rent_callback(callback: types.CallbackQuery, state: FSMContext):
     """Обработка выбора номера для продления"""
-    track_number = callback.data.split("_")[1]
+    # Получаем индекс из callback_data
+    index = int(callback.data.split("_")[1])
+    
+    # Получаем номер по индексу из глобального списка
+    global active_rents_list
+    if index >= len(active_rents_list):
+        await callback.message.answer("❌ Ошибка: номер не найден")
+        await callback.answer()
+        return
+    
+    track_number = active_rents_list[index]  # Сохраняем реальный номер, а не индекс!
     
     await state.update_data(track_number=track_number)
     await state.set_state(RentStates.waiting_for_new_rent_days)
@@ -464,10 +474,16 @@ async def process_extend_days(message: types.Message, state: FSMContext):
         return
     
     data_state = await state.get_data()
-    track_number = data_state["track_number"]
+    track_number = data_state["track_number"]  # Здесь уже хранится номер, а не индекс!
     
     # Обновляем дату окончания
     data = load_data()
+    
+    # Проверяем, есть ли такая аренда
+    if track_number not in data["rents"]:
+        await message.answer("❌ Ошибка: аренда не найдена")
+        await state.clear()
+        return
     
     if TEST_MODE:
         # Для минут
@@ -484,7 +500,7 @@ async def process_extend_days(message: types.Message, state: FSMContext):
         time_display = new_end.strftime("%d.%m.%Y")
         unit_word = "дней"
     
-    # 👇 ВОТ СЮДА добавь эти строки:
+    # Обновляем username
     data["rents"][track_number]["username"] = message.from_user.username or message.from_user.first_name
     
     save_data(data)

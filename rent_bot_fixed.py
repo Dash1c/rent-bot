@@ -269,40 +269,59 @@ async def process_rent_days(message: types.Message, state: FSMContext):
 async def show_active_rents(message: types.Message):
     data = load_data()
     active = list(data["rents"].keys())
+    print(f"📋 Активные аренды из файла: {active}")  # отладка
+    
     if not active:
         await message.answer("📭 Нет активных аренд", reply_markup=get_rent_keyboard())
         return
+    
     builder = InlineKeyboardBuilder()
     for i, number in enumerate(active):
         builder.button(text=number, callback_data=f"view_{i}")
     builder.button(text="🔙 Назад", callback_data="back_to_rent")
     builder.adjust(1)
+    
     global active_rents_list
     active_rents_list = active
+    print(f"📋 active_rents_list сохранён: {active_rents_list}")  # отладка
+    
     await message.answer("📋 Список активных аренд. Нажми на номер для действий:", reply_markup=builder.as_markup())
 
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("view_"))
 async def view_rent_details(callback: types.CallbackQuery, state: FSMContext):
+    print(f"🔍 view_rent_details вызван с callback_data: {callback.data}")
     index = int(callback.data.split("_")[1])
+    print(f"🔍 Индекс: {index}")
+    
     global active_rents_list
+    print(f"🔍 active_rents_list: {active_rents_list}")
+    print(f"🔍 Длина списка: {len(active_rents_list)}")
+    
     if index >= len(active_rents_list):
+        print(f"❌ Ошибка: индекс {index} вне диапазона (макс: {len(active_rents_list)-1})")
         await callback.message.answer("❌ Ошибка: номер не найден")
         await callback.answer()
         return
+    
     track_number = active_rents_list[index]
+    print(f"✅ Найден номер: {track_number}")
+    
     data = load_data()
     rent_info = data["rents"].get(track_number, {})
     end_date = rent_info.get("end_date", "неизвестно")
+    
     if " " in end_date:
         end_date_formatted = datetime.strptime(end_date, "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
     else:
         end_date_formatted = datetime.strptime(end_date, "%Y-%m-%d").strftime("%d.%m.%Y")
+    
     builder = InlineKeyboardBuilder()
     builder.button(text="⏳ Продлить", callback_data=f"extend_{index}")
     builder.button(text="⏹ Остановить", callback_data=f"stop_{index}")
     builder.button(text="⛔ В ЧС", callback_data=f"to_blacklist_from_view_{index}")
     builder.button(text="🔙 Назад к списку", callback_data="back_to_active")
     builder.adjust(2)
+    
     await callback.message.delete()
     await callback.message.answer(
         f"📌 Номер: {track_number}\n⏱ Заканчивается: {end_date_formatted}\n\nВыбери действие:",

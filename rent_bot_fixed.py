@@ -339,6 +339,8 @@ async def add_to_blacklist_from_view(callback: types.CallbackQuery):
     
     # Получаем индекс из callback_data
     index = int(callback.data.replace("to_blacklist_from_view_", ""))
+    
+    # Объявляем глобальную переменную только один раз!
     global active_rents_list
     
     # Проверяем, что индекс в пределах списка
@@ -368,7 +370,6 @@ async def add_to_blacklist_from_view(callback: types.CallbackQuery):
     save_data(data)
     
     # Обновляем глобальный список активных аренд
-    global active_rents_list
     active_rents_list = list(data["rents"].keys())
     
     # Отвечаем пользователю

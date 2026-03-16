@@ -289,10 +289,13 @@ async def show_active_rents(message: types.Message):
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("view_"))
 async def view_rent_details(callback: types.CallbackQuery, state: FSMContext):
     print(f"🔍 view_rent_details вызван с callback_data: {callback.data}")
+    
+    # Сначала объявляем глобальные переменные!
+    global active_rents_list
+    
     index = int(callback.data.split("_")[1])
     print(f"🔍 Индекс: {index}")
     
-    global active_rents_list
     print(f"🔍 active_rents_list: {active_rents_list}")
     print(f"🔍 Длина списка: {len(active_rents_list)}")
     

@@ -269,7 +269,7 @@ async def process_rent_days(message: types.Message, state: FSMContext):
 async def show_active_rents(message: types.Message):
     data = load_data()
     active = list(data["rents"].keys())
-    print(f"📋 Активные аренды из файла: {active}")  # отладка
+    print(f"📋 Активные аренды: {active}")
     
     if not active:
         await message.answer("📭 Нет активных аренд", reply_markup=get_rent_keyboard())
@@ -283,9 +283,8 @@ async def show_active_rents(message: types.Message):
     
     global active_rents_list
     active_rents_list = active
-    print(f"📋 active_rents_list сохранён: {active_rents_list}")  # отладка
     
-    await message.answer("📋 Список активных аренд. Нажми на номер для действий:", reply_markup=builder.as_markup())
+    await message.answer("📋 Список активных аренд:", reply_markup=builder.as_markup())
 
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("view_"))
 async def view_rent_details(callback: types.CallbackQuery, state: FSMContext):

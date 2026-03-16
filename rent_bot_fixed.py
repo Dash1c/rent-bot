@@ -492,15 +492,21 @@ async def extend_from_notification(callback: types.CallbackQuery, state: FSMCont
 
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("stop_from_notify_"))
 async def stop_from_notification(callback: types.CallbackQuery):
-    track_number = callback.data.replace("stop_from_notify_", "")
+    # Получаем номер из callback_data
+    prefix = "stop_from_notify_"
+    track_number = callback.data[len(prefix):]  # более надёжный способ
+    print(f"🔍 Получен stop для номера: {track_number}")  # для отладки
+    
     data = load_data()
     if track_number in data["rents"]:
         del data["rents"][track_number]
         save_data(data)
         await callback.message.delete()
         await callback.message.answer(f"✅ Аренда {track_number} остановлена", reply_markup=get_main_keyboard())
+        print(f"✅ Аренда {track_number} успешно остановлена")
     else:
         await callback.message.answer("❌ Ошибка: аренда не найдена")
+        print(f"❌ Аренда {track_number} не найдена в данных")
     await callback.answer()
 
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("to_blacklist_"))

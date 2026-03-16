@@ -412,7 +412,7 @@ async def stop_rent_start(message: types.Message):
     active_rents_list = active
     await message.answer("📋 Выбери номер для остановки:", reply_markup=builder.as_markup())
 
-@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("stop_"))
+@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("stop_") and not c.data.startswith("stop_pending_"))
 async def stop_rent_confirm(callback: types.CallbackQuery, state: FSMContext):
     index = int(callback.data.split("_")[1])
     global active_rents_list
@@ -520,6 +520,79 @@ async def add_to_blacklist(callback: types.CallbackQuery):
         save_data(data)
     await callback.message.delete()
     await callback.message.answer(f"⛔ Номер {track_number} добавлен в черный список", reply_markup=get_main_keyboard())
+    await callback.answer()
+
+# ================== ОБРАБОТЧИКИ ДЛЯ PENDING (НОВЫЕ) ==================
+@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_pending_"))
+async def extend_pending_callback(callback: types.CallbackQuery, state: FSMContext):
+    """Продление из списка ожидающих"""
+    index = int(callback.data.replace("extend_pending_", ""))
+    global pending_rents_list
+    if index >= len(pending_rents_list):
+        await callback.message.answer("❌ Ошибка: номер не найден")
+        await callback.answer()
+        return
+    
+    track_number = pending_rents_list[index]
+    await state.update_data(track_number=track_number)
+    await state.set_state(RentStates.waiting_for_new_rent_days)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"📌 Номер {track_number}\n⏳ На сколько продлить? (напиши число)",
+        reply_markup=get_back_keyboard()
+    )
+    await callback.answer()
+
+@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("stop_pending_"))
+async def stop_pending_callback(callback: types.CallbackQuery, state: FSMContext):
+    """Остановка из списка ожидающих"""
+    index = int(callback.data.replace("stop_pending_", ""))
+    global pending_rents_list
+    if index >= len(pending_rents_list):
+        await callback.message.answer("❌ Ошибка: номер не найден")
+        await callback.answer()
+        return
+    
+    track_number = pending_rents_list[index]
+    await state.update_data(track_number=track_number)
+    await state.set_state(RentStates.waiting_for_remove_confirm)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"❓ Прекратить аренду номера {track_number}?",
+        reply_markup=get_yes_no_keyboard()
+    )
+    await callback.answer()
+
+@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("blacklist_pending_"))
+async def blacklist_pending_callback(callback: types.CallbackQuery):
+    """Добавление в ЧС из списка ожидающих"""
+    index = int(callback.data.replace("blacklist_pending_", ""))
+    global pending_rents_list
+    if index >= len(pending_rents_list):
+        await callback.message.answer("❌ Ошибка: номер не найден")
+        await callback.answer()
+        return
+    
+    track_number = pending_rents_list[index]
+    data = load_data()
+    
+    # Удаляем из аренд
+    if track_number in data["rents"]:
+        del data["rents"][track_number]
+    
+    # Добавляем в ЧС
+    if track_number not in data["blacklist"]:
+        data["blacklist"].append(track_number)
+    
+    save_data(data)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"⛔ Номер {track_number} добавлен в черный список",
+        reply_markup=get_main_keyboard()
+    )
     await callback.answer()
 
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("pending_"))

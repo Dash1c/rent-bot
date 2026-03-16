@@ -328,6 +328,54 @@ async def view_rent_details(callback: types.CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
+# ================== НОВЫЙ ОБРАБОТЧИК ДЛЯ КНОПКИ "В ЧС" ИЗ ПРОСМОТРА ==================
+@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("to_blacklist_from_view_"))
+async def add_to_blacklist_from_view(callback: types.CallbackQuery):
+    """Добавить номер в черный список из просмотра аренды"""
+    print(f"🔍 Получен запрос на добавление в ЧС: {callback.data}")
+    
+    # Получаем индекс из callback_data
+    index = int(callback.data.replace("to_blacklist_from_view_", ""))
+    global active_rents_list
+    
+    # Проверяем, что индекс в пределах списка
+    if index >= len(active_rents_list):
+        await callback.message.answer("❌ Ошибка: номер не найден")
+        await callback.answer()
+        return
+    
+    # Получаем реальный номер по индексу
+    track_number = active_rents_list[index]
+    print(f"✅ Добавляем в ЧС номер: {track_number}")
+    
+    # Загружаем данные
+    data = load_data()
+    
+    # Удаляем из аренд, если номер там есть
+    if track_number in data["rents"]:
+        del data["rents"][track_number]
+        print(f"✅ Номер {track_number} удалён из аренд")
+    
+    # Добавляем в ЧС, если ещё не там
+    if track_number not in data["blacklist"]:
+        data["blacklist"].append(track_number)
+        print(f"✅ Номер {track_number} добавлен в ЧС")
+    
+    # Сохраняем изменения
+    save_data(data)
+    
+    # Обновляем глобальный список активных аренд
+    global active_rents_list
+    active_rents_list = list(data["rents"].keys())
+    
+    # Отвечаем пользователю
+    await callback.message.delete()
+    await callback.message.answer(
+        f"⛔ Номер {track_number} добавлен в черный список",
+        reply_markup=get_main_keyboard()
+    )
+    await callback.answer()
+
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data == "back_to_active")
 async def back_to_active_list(callback: types.CallbackQuery):
     data = load_data()
@@ -540,7 +588,7 @@ async def add_to_blacklist(callback: types.CallbackQuery):
     await callback.message.answer(f"⛔ Номер {track_number} добавлен в черный список", reply_markup=get_main_keyboard())
     await callback.answer()
 
-# ================== ОБРАБОТЧИКИ ДЛЯ PENDING (НОВЫЕ) ==================
+# ================== ОБРАБОТЧИКИ ДЛЯ PENDING ==================
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_pending_"))
 async def extend_pending_callback(callback: types.CallbackQuery, state: FSMContext):
     """Продление из списка ожидающих"""

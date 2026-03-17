@@ -410,8 +410,9 @@ async def extend_rent_start(message: types.Message):
         return
     await message.answer("📋 Выбери номер для продления:", reply_markup=get_track_numbers_keyboard(active, "extend"))
 
-@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_"))
+@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_") and not c.data.startswith("extend_pending_"))
 async def extend_rent_callback(callback: types.CallbackQuery, state: FSMContext):
+    """Обработка выбора номера для продления из обычного меню"""
     index = int(callback.data.split("_")[1])
     global active_rents_list
     if index >= len(active_rents_list):
@@ -596,14 +597,19 @@ async def add_to_blacklist(callback: types.CallbackQuery):
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_pending_"))
 async def extend_pending_callback(callback: types.CallbackQuery, state: FSMContext):
     """Продление из списка ожидающих"""
+    print(f"🔍 extend_pending_callback вызван с {callback.data}")
+    
     index = int(callback.data.replace("extend_pending_", ""))
     global pending_rents_list
+    
     if index >= len(pending_rents_list):
         await callback.message.answer("❌ Ошибка: номер не найден")
         await callback.answer()
         return
     
     track_number = pending_rents_list[index]
+    print(f"✅ Продлеваем из ожидающих номер: {track_number}")
+    
     await state.update_data(track_number=track_number)
     await state.set_state(RentStates.waiting_for_new_rent_days)
     

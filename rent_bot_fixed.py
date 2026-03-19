@@ -410,18 +410,79 @@ async def extend_rent_start(message: types.Message):
         return
     await message.answer("📋 Выбери номер для продления:", reply_markup=get_track_numbers_keyboard(active, "extend"))
 
-@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_") and not c.data.startswith("extend_pending_"))
+# ================== ПРОДЛЕНИЕ ИЗ РАЗНЫХ МЕСТ ==================
+
+@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_from_notify_"))
+async def extend_from_notification(callback: types.CallbackQuery, state: FSMContext):
+    """Продление из уведомления (номер прямо в callback)"""
+    print(f"🔍 extend_from_notify: {callback.data}")
+    
+    # Получаем номер напрямую (не индекс!)
+    track_number = callback.data.replace("extend_from_notify_", "")
+    print(f"✅ Номер для продления: {track_number}")
+    
+    # Проверяем, существует ли такая аренда
+    data = load_data()
+    if track_number not in data["rents"]:
+        await callback.message.answer("❌ Ошибка: аренда не найдена")
+        await callback.answer()
+        return
+    
+    await state.update_data(track_number=track_number)
+    await state.set_state(RentStates.waiting_for_new_rent_days)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"📌 Номер {track_number}\n⏳ На сколько продлить? (напиши число)",
+        reply_markup=get_back_keyboard()
+    )
+    await callback.answer()
+
+@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_") and not c.data.startswith("extend_pending_") and not c.data.startswith("extend_from_notify_"))
 async def extend_rent_callback(callback: types.CallbackQuery, state: FSMContext):
-    """Обработка выбора номера для продления из обычного меню"""
+    """Продление из обычного меню (по индексу)"""
+    print(f"🔍 extend_rent: {callback.data}")
+    
     index = int(callback.data.split("_")[1])
     global active_rents_list
+    
     if index >= len(active_rents_list):
         await callback.message.answer("❌ Ошибка: номер не найден")
         await callback.answer()
         return
+    
     track_number = active_rents_list[index]
+    print(f"✅ Номер для продления: {track_number}")
+    
     await state.update_data(track_number=track_number)
     await state.set_state(RentStates.waiting_for_new_rent_days)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"📌 Номер {track_number}\n⏳ На сколько продлить? (напиши число)",
+        reply_markup=get_back_keyboard()
+    )
+    await callback.answer()
+
+@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_pending_"))
+async def extend_pending_callback(callback: types.CallbackQuery, state: FSMContext):
+    """Продление из списка ожидающих (по индексу)"""
+    print(f"🔍 extend_pending: {callback.data}")
+    
+    index = int(callback.data.replace("extend_pending_", ""))
+    global pending_rents_list
+    
+    if index >= len(pending_rents_list):
+        await callback.message.answer("❌ Ошибка: номер не найден")
+        await callback.answer()
+        return
+    
+    track_number = pending_rents_list[index]
+    print(f"✅ Номер для продления из ожидающих: {track_number}")
+    
+    await state.update_data(track_number=track_number)
+    await state.set_state(RentStates.waiting_for_new_rent_days)
+    
     await callback.message.delete()
     await callback.message.answer(
         f"📌 Номер {track_number}\n⏳ На сколько продлить? (напиши число)",
@@ -548,18 +609,6 @@ async def remove_from_blacklist(callback: types.CallbackQuery, state: FSMContext
         )
     await callback.answer()
 
-# ================== ДЕЙСТВИЯ ИЗ УВЕДОМЛЕНИЙ ==================
-@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_from_notify_"))
-async def extend_from_notification(callback: types.CallbackQuery, state: FSMContext):
-    track_number = callback.data.replace("extend_from_notify_", "")
-    await state.update_data(track_number=track_number)
-    await state.set_state(RentStates.waiting_for_new_rent_days)
-    await callback.message.delete()
-    await callback.message.answer(
-        f"📌 Номер {track_number}\n⏳ На сколько продлить? (напиши число)",
-        reply_markup=get_back_keyboard()
-    )
-    await callback.answer()
 
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("stop_from_notify_"))
 async def stop_from_notification(callback: types.CallbackQuery):

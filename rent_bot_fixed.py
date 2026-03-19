@@ -134,10 +134,12 @@ def get_blacklist_keyboard(blacklist):
     return builder.as_markup()
 
 def get_blacklist_actions_keyboard(track_number):
+    """Кнопки для номера в черном списке"""
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Убрать из ЧС", callback_data=f"remove_from_blacklist_{track_number}")
+    builder.button(text="⏹ Остановить аренду", callback_data=f"stop_blacklist_{track_number}")
     builder.button(text="🔙 Назад", callback_data="back_to_blacklist")
-    builder.adjust(1)
+    builder.adjust(1)  # По одной кнопке в ряд
     return builder.as_markup()
 
 def get_expired_notification_keyboard(track_number):
@@ -607,6 +609,43 @@ async def remove_from_blacklist(callback: types.CallbackQuery, state: FSMContext
             f"✅ Номер {track_number} убран из ЧС\n⏳ На сколько аренда? (напиши число)",
             reply_markup=get_back_keyboard()
         )
+    await callback.answer()
+
+    
+    @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("stop_blacklist_"))
+async def stop_blacklist_rent(callback: types.CallbackQuery, state: FSMContext):
+    """Остановить аренду номера из черного списка"""
+    print(f"🔍 Получен запрос на остановку из ЧС: {callback.data}")
+    
+    # Получаем номер из callback_data
+    track_number = callback.data.replace("stop_blacklist_", "")
+    print(f"✅ Останавливаем аренду номера: {track_number}")
+    
+    data = load_data()
+    
+    # Проверяем, есть ли такой номер в активных арендах
+    if track_number in data["rents"]:
+        # Удаляем из аренд
+        del data["rents"][track_number]
+        
+        # Оставляем в ЧС (не удаляем оттуда!)
+        save_data(data)
+        
+        await callback.message.delete()
+        await callback.message.answer(
+            f"✅ Аренда номера {track_number} остановлена\n"
+            f"Номер остаётся в черном списке",
+            reply_markup=get_main_keyboard()
+        )
+        print(f"✅ Аренда {track_number} успешно остановлена")
+    else:
+        # Если номер не найден в арендах
+        await callback.message.answer(
+            f"❌ Номер {track_number} не найден в активных арендах",
+            reply_markup=get_main_keyboard()
+        )
+        print(f"❌ Номер {track_number} не найден в арендах")
+    
     await callback.answer()
 
 

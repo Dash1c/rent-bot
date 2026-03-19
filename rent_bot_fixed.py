@@ -139,7 +139,7 @@ def get_blacklist_actions_keyboard(track_number):
     builder.button(text="✅ Убрать из ЧС", callback_data=f"remove_from_blacklist_{track_number}")
     builder.button(text="⏹ Остановить аренду", callback_data=f"stop_blacklist_{track_number}")
     builder.button(text="🔙 Назад", callback_data="back_to_blacklist")
-    builder.adjust(1)  # По одной кнопке в ряд
+    builder.adjust(1)
     return builder.as_markup()
 
 def get_expired_notification_keyboard(track_number):
@@ -292,12 +292,9 @@ async def show_active_rents(message: types.Message):
 async def view_rent_details(callback: types.CallbackQuery, state: FSMContext):
     print(f"🔍 view_rent_details вызван с callback_data: {callback.data}")
     
-    # Сначала объявляем глобальные переменные!
     global active_rents_list
-    
     index = int(callback.data.split("_")[1])
     print(f"🔍 Индекс: {index}")
-    
     print(f"🔍 active_rents_list: {active_rents_list}")
     print(f"🔍 Длина списка: {len(active_rents_list)}")
     
@@ -333,48 +330,36 @@ async def view_rent_details(callback: types.CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
-# ================== НОВЫЙ ОБРАБОТЧИК ДЛЯ КНОПКИ "В ЧС" ИЗ ПРОСМОТРА ==================
+# ================== ОБРАБОТЧИК ДЛЯ КНОПКИ "В ЧС" ИЗ ПРОСМОТРА ==================
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("to_blacklist_from_view_"))
 async def add_to_blacklist_from_view(callback: types.CallbackQuery):
     """Добавить номер в черный список из просмотра аренды"""
     print(f"🔍 Получен запрос на добавление в ЧС: {callback.data}")
     
-    # Получаем индекс из callback_data
     index = int(callback.data.replace("to_blacklist_from_view_", ""))
-    
-    # Объявляем глобальную переменную только один раз!
     global active_rents_list
     
-    # Проверяем, что индекс в пределах списка
     if index >= len(active_rents_list):
         await callback.message.answer("❌ Ошибка: номер не найден")
         await callback.answer()
         return
     
-    # Получаем реальный номер по индексу
     track_number = active_rents_list[index]
     print(f"✅ Добавляем в ЧС номер: {track_number}")
     
-    # Загружаем данные
     data = load_data()
     
-    # Удаляем из аренд, если номер там есть
     if track_number in data["rents"]:
         del data["rents"][track_number]
         print(f"✅ Номер {track_number} удалён из аренд")
     
-    # Добавляем в ЧС, если ещё не там
     if track_number not in data["blacklist"]:
         data["blacklist"].append(track_number)
         print(f"✅ Номер {track_number} добавлен в ЧС")
     
-    # Сохраняем изменения
     save_data(data)
-    
-    # Обновляем глобальный список активных аренд
     active_rents_list = list(data["rents"].keys())
     
-    # Отвечаем пользователю
     await callback.message.delete()
     await callback.message.answer(
         f"⛔ Номер {track_number} добавлен в черный список",
@@ -413,17 +398,14 @@ async def extend_rent_start(message: types.Message):
     await message.answer("📋 Выбери номер для продления:", reply_markup=get_track_numbers_keyboard(active, "extend"))
 
 # ================== ПРОДЛЕНИЕ ИЗ РАЗНЫХ МЕСТ ==================
-
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_from_notify_"))
 async def extend_from_notification(callback: types.CallbackQuery, state: FSMContext):
     """Продление из уведомления (номер прямо в callback)"""
     print(f"🔍 extend_from_notify: {callback.data}")
     
-    # Получаем номер напрямую (не индекс!)
     track_number = callback.data.replace("extend_from_notify_", "")
     print(f"✅ Номер для продления: {track_number}")
     
-    # Проверяем, существует ли такая аренда
     data = load_data()
     if track_number not in data["rents"]:
         await callback.message.answer("❌ Ошибка: аренда не найдена")
@@ -521,7 +503,7 @@ async def process_extend_days(message: types.Message, state: FSMContext):
         time_display = new_end.strftime("%d.%m.%Y")
         unit_word = "дней"
     data["rents"][track_number]["username"] = message.from_user.username or message.from_user.first_name
-    data["rents"][track_number]["pending"] = False   # снимаем флаг ожидания
+    data["rents"][track_number]["pending"] = False
     save_data(data)
     await message.answer(
         f"✅ Окей, продлил!\n📌 Номер: {track_number}\n⏱ Продление: {days} {unit_word}\n📅 Новый срок до: {time_display}",
@@ -546,7 +528,7 @@ async def stop_rent_start(message: types.Message):
     active_rents_list = active
     await message.answer("📋 Выбери номер для остановки:", reply_markup=builder.as_markup())
 
-@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("stop_") and not c.data.startswith("stop_pending_"))
+@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("stop_") and not c.data.startswith("stop_pending_") and not c.data.startswith("stop_blacklist_"))
 async def stop_rent_confirm(callback: types.CallbackQuery, state: FSMContext):
     index = int(callback.data.split("_")[1])
     global active_rents_list
@@ -611,24 +593,19 @@ async def remove_from_blacklist(callback: types.CallbackQuery, state: FSMContext
         )
     await callback.answer()
 
-    
-    @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("stop_blacklist_"))
+# ================== НОВАЯ КНОПКА: ОСТАНОВИТЬ ИЗ ЧЕРНОГО СПИСКА ==================
+@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("stop_blacklist_"))
 async def stop_blacklist_rent(callback: types.CallbackQuery, state: FSMContext):
     """Остановить аренду номера из черного списка"""
     print(f"🔍 Получен запрос на остановку из ЧС: {callback.data}")
     
-    # Получаем номер из callback_data
     track_number = callback.data.replace("stop_blacklist_", "")
     print(f"✅ Останавливаем аренду номера: {track_number}")
     
     data = load_data()
     
-    # Проверяем, есть ли такой номер в активных арендах
     if track_number in data["rents"]:
-        # Удаляем из аренд
         del data["rents"][track_number]
-        
-        # Оставляем в ЧС (не удаляем оттуда!)
         save_data(data)
         
         await callback.message.delete()
@@ -639,7 +616,6 @@ async def stop_blacklist_rent(callback: types.CallbackQuery, state: FSMContext):
         )
         print(f"✅ Аренда {track_number} успешно остановлена")
     else:
-        # Если номер не найден в арендах
         await callback.message.answer(
             f"❌ Номер {track_number} не найден в активных арендах",
             reply_markup=get_main_keyboard()
@@ -648,13 +624,11 @@ async def stop_blacklist_rent(callback: types.CallbackQuery, state: FSMContext):
     
     await callback.answer()
 
-
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("stop_from_notify_"))
 async def stop_from_notification(callback: types.CallbackQuery):
-    # Получаем номер из callback_data
     prefix = "stop_from_notify_"
-    track_number = callback.data[len(prefix):]  # более надёжный способ
-    print(f"🔍 Получен stop для номера: {track_number}")  # для отладки
+    track_number = callback.data[len(prefix):]
+    print(f"🔍 Получен stop для номера: {track_number}")
     
     data = load_data()
     if track_number in data["rents"]:
@@ -682,35 +656,8 @@ async def add_to_blacklist(callback: types.CallbackQuery):
     await callback.answer()
 
 # ================== ОБРАБОТЧИКИ ДЛЯ PENDING ==================
-@dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("extend_pending_"))
-async def extend_pending_callback(callback: types.CallbackQuery, state: FSMContext):
-    """Продление из списка ожидающих"""
-    print(f"🔍 extend_pending_callback вызван с {callback.data}")
-    
-    index = int(callback.data.replace("extend_pending_", ""))
-    global pending_rents_list
-    
-    if index >= len(pending_rents_list):
-        await callback.message.answer("❌ Ошибка: номер не найден")
-        await callback.answer()
-        return
-    
-    track_number = pending_rents_list[index]
-    print(f"✅ Продлеваем из ожидающих номер: {track_number}")
-    
-    await state.update_data(track_number=track_number)
-    await state.set_state(RentStates.waiting_for_new_rent_days)
-    
-    await callback.message.delete()
-    await callback.message.answer(
-        f"📌 Номер {track_number}\n⏳ На сколько продлить? (напиши число)",
-        reply_markup=get_back_keyboard()
-    )
-    await callback.answer()
-
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("stop_pending_"))
 async def stop_pending_callback(callback: types.CallbackQuery, state: FSMContext):
-    """Остановка из списка ожидающих"""
     index = int(callback.data.replace("stop_pending_", ""))
     global pending_rents_list
     if index >= len(pending_rents_list):
@@ -731,7 +678,6 @@ async def stop_pending_callback(callback: types.CallbackQuery, state: FSMContext
 
 @dp.callback_query(AllowedUsersFilter(), lambda c: c.data.startswith("blacklist_pending_"))
 async def blacklist_pending_callback(callback: types.CallbackQuery):
-    """Добавление в ЧС из списка ожидающих"""
     index = int(callback.data.replace("blacklist_pending_", ""))
     global pending_rents_list
     if index >= len(pending_rents_list):
@@ -742,11 +688,9 @@ async def blacklist_pending_callback(callback: types.CallbackQuery):
     track_number = pending_rents_list[index]
     data = load_data()
     
-    # Удаляем из аренд
     if track_number in data["rents"]:
         del data["rents"][track_number]
     
-    # Добавляем в ЧС
     if track_number not in data["blacklist"]:
         data["blacklist"].append(track_number)
     
